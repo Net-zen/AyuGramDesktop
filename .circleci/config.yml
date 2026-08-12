@@ -65,7 +65,7 @@ jobs:
 
       - run:
           name: Prepare AyuGram libraries
-          shell: cmd.exe
+          shell: cmd.exe /S /C
           command: |
             call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
             cd /d C:\TBuild
