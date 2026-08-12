@@ -1,36 +1,54 @@
 version: 2.1
 
 jobs:
-  prepare-ayugram:
+
+  prepare:
     machine:
       image: windows-server-2022-gui:current
+
     resource_class: windows.medium
+
     shell: powershell.exe -ExecutionPolicy Bypass
 
     steps:
+
       - checkout
 
       - run:
-          name: Install CMake and Ninja
+          name: Install tools
           command: |
-            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-            choco install ninja -y
-
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                        [System.Environment]::GetEnvironmentVariable("Path","User")
-
-            cmake --version
-            ninja --version
+            choco install cmake ninja -y
 
       - run:
-          name: Prepare build directories
+          name: Install Python 3.10
           command: |
-            New-Item -ItemType Directory -Force `
+            $url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
+            $installer = "C:\python310.exe"
+
+            Invoke-WebRequest `
+              -Uri $url `
+              -OutFile $installer
+
+            Start-Process `
+              -FilePath $installer `
+              -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1" `
+              -Wait
+
+            C:\Program Files\Python310\python.exe --version
+
+
+      - run:
+          name: Create TBuild
+          command: |
+            New-Item `
+              -ItemType Directory `
+              -Force `
               C:\TBuild\Libraries, `
               C:\TBuild\ThirdParty | Out-Null
 
+
       - run:
-          name: Clone AyuGram 7.0.9
+          name: Clone AyuGram
           command: |
             git clone `
               --recursive `
@@ -38,56 +56,62 @@ jobs:
               https://github.com/AyuGram/AyuGramDesktop.git `
               C:\TBuild\tdesktop
 
-      - run:
-          name: Verify MSVC and ATL
-          command: |
-            $vs = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
-
-            $vcvars = "$vs\VC\Auxiliary\Build\vcvars64.bat"
-            $atl = "$vs\VC\Tools\MSVC\14.44.35207\atlmfc\include\atlbase.h"
-
-            if (!(Test-Path $vcvars)) {
-              throw "vcvars64.bat not found"
-            }
-
-            if (!(Test-Path $atl)) {
-              throw "ATL 14.44 not found"
-            }
-
-            Write-Host "MSVC/ATL OK"
-            Write-Host $atl
 
       - run:
-          name: Disk before prepare
+          name: Apply Acrylic patch
           command: |
-            $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-            Write-Host "Free GB: $([math]::Round($disk.FreeSpace / 1GB, 2))"
+
+            cd C:\TBuild\tdesktop
+
+            @'
+diff --git a/Telegram/SourceFiles/window/main_window.cpp b/Telegram/SourceFiles/window/main_window.cpp
+--- a/Telegram/SourceFiles/window/main_window.cpp
++++ b/Telegram/SourceFiles/window/main_window.cpp
+@@ -392,7 +392,8 @@ QImage GenerateCounterLayer(CounterLayerArgs &&args) {
+ MainWindow::MainWindow(not_null<Controller*> controller)
+-: _controller(controller)
++: Ui::RpWindow(true)
++, _controller(controller)
+ , _positionUpdatedTimer([=] { savePosition(); })
+ , _body(body()) {
++	setWindowFlag(Qt::FramelessWindowHint);
+ 	style::PaletteChanged(
+diff --git a/Telegram/SourceFiles/platform/win/main_window_win.cpp b/Telegram/SourceFiles/platform/win/main_window_win.cpp
+--- a/Telegram/SourceFiles/platform/win/main_window_win.cpp
++++ b/Telegram/SourceFiles/platform/win/main_window_win.cpp
+@@ -711,6 +711,17 @@ void MainWindow::initHook() {
++	static const auto kSystemVersion = QOperatingSystemVersion::current();
++	if (kSystemVersion.microVersion() >= 22621) {
++		constexpr auto kDwmwaSystemBackdropType = DWMWINDOWATTRIBUTE(38);
++		constexpr auto kDesktopAcrylic = DWORD(3);
++		DwmSetWindowAttribute(
++			_HWnd,
++			kDwmwaSystemBackdropType,
++			&kDesktopAcrylic,
++			sizeof(kDesktopAcrylic));
++	}
++
+ 	WTSRegisterSessionNotification(_hWnd, NOTIFY_FOR_THIS_SESSION);
+ }
+'@ | Out-File `
+              C:\TBuild\AyuGram-Acrylic.patch `
+              -Encoding utf8
+
+
+            git apply --check C:\TBuild\AyuGram-Acrylic.patch
+
+            git apply C:\TBuild\AyuGram-Acrylic.patch
+
+            git diff --check
+
 
       - run:
-          name: Install Python 3.10
+          name: Prepare libraries
           command: |
-            $url = "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe"
-            $installer = "C:\python310-installer.exe"
-      
-            Invoke-WebRequest `
-              -Uri $url `
-              -OutFile $installer
-      
-            Start-Process `
-              -FilePath $installer `
-              -ArgumentList `
-                "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1" `
-              -Wait
-      
-            python --version
-            where.exe python
 
-      - run:
-          name: Prepare AyuGram libraries
-          command: |
             @"
-            set "PATH=C:\Python310;C:\Python310\Scripts;%PATH%"
-            set "CMAKE_BUILD_PARALLEL_LEVEL=2"
+            set "PATH=C:\Program Files\Python310;C:\Program Files\Python310\Scripts;%PATH%"
+            set CMAKE_BUILD_PARALLEL_LEVEL=2
 
             call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
 
@@ -97,35 +121,104 @@ jobs:
             where python
 
             call tdesktop\Telegram\build\prepare\win.bat
-            "@ | Out-File -Encoding ASCII C:\TBuild\prepare.cmd
+
+            "@ | Out-File `
+              C:\TBuild\prepare.cmd `
+              -Encoding ASCII
+
 
             cmd.exe /c C:\TBuild\prepare.cmd
-            
+
+
       - run:
-          name: Disk after prepare
+          name: Save workspace
           command: |
-            $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+            Write-Host "Preparing workspace"
 
-            Write-Host "Disk total GB:"
-            Write-Host ([math]::Round($disk.Size / 1GB, 2))
 
-            Write-Host "Disk free GB:"
-            Write-Host ([math]::Round($disk.FreeSpace / 1GB, 2))
+      - persist_to_workspace:
+          root: C:\
+          paths:
+            - TBuild
 
-            Write-Host ""
-            Write-Host "TBuild size:"
 
-            $bytes = (
-              Get-ChildItem C:\TBuild `
-                -File `
-                -Recurse `
-                -ErrorAction SilentlyContinue |
-              Measure-Object Length -Sum
-            ).Sum
 
-            Write-Host "$([math]::Round($bytes / 1GB, 2)) GB"
+  build:
+
+    machine:
+      image: windows-server-2022-gui:current
+
+    resource_class: windows.medium
+
+    shell: powershell.exe -ExecutionPolicy Bypass
+
+
+    steps:
+
+      - checkout
+
+
+      - attach_workspace:
+          at: C:\
+
+
+      - run:
+          name: Configure
+          command: |
+
+            @"
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+
+            cd /d C:\TBuild\tdesktop\Telegram
+
+            call configure.bat x64 ^
+              -D TDESKTOP_API_ID=2040 ^
+              -D TDESKTOP_API_HASH=b18441a1ff607e10a989891a5462e627
+
+            "@ | Out-File `
+              C:\TBuild\configure.cmd `
+              -Encoding ASCII
+
+
+            cmd.exe /c C:\TBuild\configure.cmd
+
+
+
+      - run:
+          name: Build Telegram
+          command: |
+
+            @"
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+
+            cmake --build C:\TBuild\tdesktop\out ^
+              --config Release ^
+              --target Telegram ^
+              -- /m:2
+
+            "@ | Out-File `
+              C:\TBuild\build.cmd `
+              -Encoding ASCII
+
+
+            cmd.exe /c C:\TBuild\build.cmd
+
+
+
+      - store_artifacts:
+          path: C:\TBuild\tdesktop\out\Release\AyuGram.exe
+          destination: AyuGram.exe
+
+
 
 workflows:
-  prepare-test:
+
+  build-ayugram:
+
     jobs:
-      - prepare-ayugram
+
+      - prepare
+
+      - build:
+          requires:
+            - prepare
