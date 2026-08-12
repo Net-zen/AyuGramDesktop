@@ -1,0 +1,76 @@
+version: 2.1
+
+jobs:
+  test-windows:
+    machine:
+      image: windows-server-2022-gui:current
+    resource_class: windows.medium
+
+    shell: powershell.exe -ExecutionPolicy Bypass
+
+    steps:
+      - checkout
+
+      - run:
+          name: System information
+          command: |
+            Write-Host "=== WINDOWS ==="
+            Get-ComputerInfo |
+              Select-Object WindowsProductName, WindowsVersion, OsBuildNumber
+
+            Write-Host ""
+            Write-Host "=== CPU ==="
+
+            Get-CimInstance Win32_Processor |
+              Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
+
+            Write-Host ""
+            Write-Host "=== RAM ==="
+
+            Get-CimInstance Win32_ComputerSystem |
+              Select-Object TotalPhysicalMemory
+
+            Write-Host ""
+            Write-Host "=== DISK ==="
+
+            Get-PSDrive -PSProvider FileSystem
+
+      - run:
+          name: Visual Studio
+          command: |
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+            if (!(Test-Path $vswhere)) {
+              throw "vswhere.exe not found"
+            }
+
+            & $vswhere -all -products *
+
+      - run:
+          name: Toolchain
+          command: |
+            Write-Host "=== CMAKE ==="
+            cmake --version
+
+            Write-Host ""
+            Write-Host "=== PYTHON ==="
+            python --version
+
+            Write-Host ""
+            Write-Host "=== GIT ==="
+            git --version
+
+            Write-Host ""
+            Write-Host "=== NINJA ==="
+
+            if (Get-Command ninja -ErrorAction SilentlyContinue) {
+              ninja --version
+            }
+            else {
+              Write-Host "Ninja not found"
+            }
+
+workflows:
+  test:
+    jobs:
+      - test-windows
