@@ -1,124 +1,101 @@
 version: 2.1
 
 jobs:
-  test-windows:
+  prepare-ayugram:
     machine:
       image: windows-server-2022-gui:current
-
     resource_class: windows.medium
-
     shell: powershell.exe -ExecutionPolicy Bypass
 
     steps:
       - checkout
 
       - run:
-          name: Full environment check
+          name: Install CMake and Ninja
           command: |
-            Write-Host "=== WINDOWS ==="
-            $os = Get-CimInstance Win32_OperatingSystem
-            Write-Host "Caption: $($os.Caption)"
-            Write-Host "Version: $($os.Version)"
-            Write-Host "Build: $($os.BuildNumber)"
+            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+            choco install ninja -y
 
-            Write-Host ""
-            Write-Host "=== CPU ==="
-            $cpu = Get-CimInstance Win32_Processor
-            Write-Host "Name: $($cpu.Name)"
-            Write-Host "Cores: $($cpu.NumberOfCores)"
-            Write-Host "LogicalProcessors: $($cpu.NumberOfLogicalProcessors)"
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                        [System.Environment]::GetEnvironmentVariable("Path","User")
 
-            Write-Host ""
-            Write-Host "=== RAM ==="
-            $ram = Get-CimInstance Win32_ComputerSystem
-            $ramGB = [math]::Round($ram.TotalPhysicalMemory / 1GB, 2)
-            Write-Host "RAM_GB: $ramGB"
+            cmake --version
+            ninja --version
 
-            Write-Host ""
-            Write-Host "=== DISK ==="
+      - run:
+          name: Prepare build directories
+          command: |
+            New-Item -ItemType Directory -Force `
+              C:\TBuild\Libraries, `
+              C:\TBuild\ThirdParty | Out-Null
+
+      - run:
+          name: Clone AyuGram 7.0.9
+          command: |
+            git clone `
+              --recursive `
+              --branch v7.0.9 `
+              https://github.com/AyuGram/AyuGramDesktop.git `
+              C:\TBuild\tdesktop
+
+      - run:
+          name: Verify MSVC and ATL
+          command: |
+            $vs = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
+
+            $vcvars = "$vs\VC\Auxiliary\Build\vcvars64.bat"
+            $atl = "$vs\VC\Tools\MSVC\14.44.35207\atlmfc\include\atlbase.h"
+
+            if (!(Test-Path $vcvars)) {
+              throw "vcvars64.bat not found"
+            }
+
+            if (!(Test-Path $atl)) {
+              throw "ATL 14.44 not found"
+            }
+
+            Write-Host "MSVC/ATL OK"
+            Write-Host $atl
+
+      - run:
+          name: Disk before prepare
+          command: |
             $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-            $sizeGB = [math]::Round($disk.Size / 1GB, 2)
-            $freeGB = [math]::Round($disk.FreeSpace / 1GB, 2)
-            Write-Host "Disk_Size_GB: $sizeGB"
-            Write-Host "Disk_Free_GB: $freeGB"
+            Write-Host "Free GB: $([math]::Round($disk.FreeSpace / 1GB, 2))"
+
+      - run:
+          name: Prepare AyuGram libraries
+          shell: cmd.exe
+          command: |
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+            cd /d C:\TBuild
+            call tdesktop\Telegram\build\prepare\win.bat
+
+      - run:
+          name: Disk after prepare
+          command: |
+            $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+
+            Write-Host "Disk total GB:"
+            Write-Host ([math]::Round($disk.Size / 1GB, 2))
+
+            Write-Host "Disk free GB:"
+            Write-Host ([math]::Round($disk.FreeSpace / 1GB, 2))
 
             Write-Host ""
-            Write-Host "=== VISUAL STUDIO ==="
-            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            Write-Host "TBuild size:"
 
-            if (Test-Path $vswhere) {
-              & $vswhere -all -products *
-            }
-            else {
-              Write-Host "vswhere not found"
-            }
-
-            Write-Host ""
-            Write-Host "=== MSVC TOOLSETS ==="
-
-            if (Test-Path "${env:ProgramFiles}\Microsoft Visual Studio") {
-              Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" `
-                -Filter cl.exe `
+            $bytes = (
+              Get-ChildItem C:\TBuild `
+                -File `
                 -Recurse `
                 -ErrorAction SilentlyContinue |
-                Select-Object -First 20 |
-                ForEach-Object {
-                  Write-Host $_.FullName
-                }
-            }
+              Measure-Object Length -Sum
+            ).Sum
 
-            if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio") {
-              Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" `
-                -Filter cl.exe `
-                -Recurse `
-                -ErrorAction SilentlyContinue |
-                Select-Object -First 20 |
-                ForEach-Object {
-                  Write-Host $_.FullName
-                }
-            }
-
-            Write-Host ""
-            Write-Host "=== ATL ==="
-
-            Get-ChildItem "C:\Program Files*" `
-              -Filter atlbase.h `
-              -Recurse `
-              -ErrorAction SilentlyContinue |
-              Select-Object -First 20 |
-              ForEach-Object {
-                Write-Host $_.FullName
-              }
-
-            Write-Host ""
-            Write-Host "=== CMAKE ==="
-
-            if (Get-Command cmake -ErrorAction SilentlyContinue) {
-              cmake --version
-            }
-            else {
-              Write-Host "CMake not found"
-            }
-
-            Write-Host ""
-            Write-Host "=== NINJA ==="
-
-            if (Get-Command ninja -ErrorAction SilentlyContinue) {
-              ninja --version
-            }
-            else {
-              Write-Host "Ninja not found"
-            }
-
-            Write-Host ""
-            Write-Host "=== PYTHON ==="
-            python --version
-
-            Write-Host ""
-            Write-Host "=== GIT ==="
-            git --version
+            Write-Host "$([math]::Round($bytes / 1GB, 2)) GB"
 
 workflows:
-  test:
+  prepare-test:
     jobs:
-      - test-windows
+      - prepare-ayugram
