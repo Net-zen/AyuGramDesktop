@@ -1,0 +1,124 @@
+version: 2.1
+
+jobs:
+  test-windows:
+    machine:
+      image: windows-server-2022-gui:current
+
+    resource_class: windows.medium
+
+    shell: powershell.exe -ExecutionPolicy Bypass
+
+    steps:
+      - checkout
+
+      - run:
+          name: Full environment check
+          command: |
+            Write-Host "=== WINDOWS ==="
+            $os = Get-CimInstance Win32_OperatingSystem
+            Write-Host "Caption: $($os.Caption)"
+            Write-Host "Version: $($os.Version)"
+            Write-Host "Build: $($os.BuildNumber)"
+
+            Write-Host ""
+            Write-Host "=== CPU ==="
+            $cpu = Get-CimInstance Win32_Processor
+            Write-Host "Name: $($cpu.Name)"
+            Write-Host "Cores: $($cpu.NumberOfCores)"
+            Write-Host "LogicalProcessors: $($cpu.NumberOfLogicalProcessors)"
+
+            Write-Host ""
+            Write-Host "=== RAM ==="
+            $ram = Get-CimInstance Win32_ComputerSystem
+            $ramGB = [math]::Round($ram.TotalPhysicalMemory / 1GB, 2)
+            Write-Host "RAM_GB: $ramGB"
+
+            Write-Host ""
+            Write-Host "=== DISK ==="
+            $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+            $sizeGB = [math]::Round($disk.Size / 1GB, 2)
+            $freeGB = [math]::Round($disk.FreeSpace / 1GB, 2)
+            Write-Host "Disk_Size_GB: $sizeGB"
+            Write-Host "Disk_Free_GB: $freeGB"
+
+            Write-Host ""
+            Write-Host "=== VISUAL STUDIO ==="
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+            if (Test-Path $vswhere) {
+              & $vswhere -all -products *
+            }
+            else {
+              Write-Host "vswhere not found"
+            }
+
+            Write-Host ""
+            Write-Host "=== MSVC TOOLSETS ==="
+
+            if (Test-Path "${env:ProgramFiles}\Microsoft Visual Studio") {
+              Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" `
+                -Filter cl.exe `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -First 20 |
+                ForEach-Object {
+                  Write-Host $_.FullName
+                }
+            }
+
+            if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio") {
+              Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" `
+                -Filter cl.exe `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -First 20 |
+                ForEach-Object {
+                  Write-Host $_.FullName
+                }
+            }
+
+            Write-Host ""
+            Write-Host "=== ATL ==="
+
+            Get-ChildItem "C:\Program Files*" `
+              -Filter atlbase.h `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Select-Object -First 20 |
+              ForEach-Object {
+                Write-Host $_.FullName
+              }
+
+            Write-Host ""
+            Write-Host "=== CMAKE ==="
+
+            if (Get-Command cmake -ErrorAction SilentlyContinue) {
+              cmake --version
+            }
+            else {
+              Write-Host "CMake not found"
+            }
+
+            Write-Host ""
+            Write-Host "=== NINJA ==="
+
+            if (Get-Command ninja -ErrorAction SilentlyContinue) {
+              ninja --version
+            }
+            else {
+              Write-Host "Ninja not found"
+            }
+
+            Write-Host ""
+            Write-Host "=== PYTHON ==="
+            python --version
+
+            Write-Host ""
+            Write-Host "=== GIT ==="
+            git --version
+
+workflows:
+  test:
+    jobs:
+      - test-windows
