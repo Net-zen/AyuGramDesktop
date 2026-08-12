@@ -60,10 +60,9 @@ jobs:
       - run:
           name: Apply Acrylic patch
           command: |
-
             cd C:\TBuild\tdesktop
 
-            @'
+            $patch = @"
 diff --git a/Telegram/SourceFiles/window/main_window.cpp b/Telegram/SourceFiles/window/main_window.cpp
 --- a/Telegram/SourceFiles/window/main_window.cpp
 +++ b/Telegram/SourceFiles/window/main_window.cpp
@@ -91,12 +90,13 @@ diff --git a/Telegram/SourceFiles/platform/win/main_window_win.cpp b/Telegram/So
 +			sizeof(kDesktopAcrylic));
 +	}
 +
- 	WTSRegisterSessionNotification(_hWnd, NOTIFY_FOR_THIS_SESSION);
+ 	WTSRegisterSessionNotification(_HWnd, NOTIFY_FOR_THIS_SESSION);
  }
-'@ | Out-File `
+"@
+
+            $patch | Out-File `
               C:\TBuild\AyuGram-Acrylic.patch `
               -Encoding utf8
-
 
             git apply --check C:\TBuild\AyuGram-Acrylic.patch
 
