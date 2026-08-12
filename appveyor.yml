@@ -1,0 +1,35 @@
+image:
+  - Visual Studio 2022
+
+clone_depth: 1
+
+build: off
+
+environment:
+  matrix:
+    - BUILD_TYPE: Release
+
+install:
+  - cmd: |
+      echo === Visual Studio ===
+      call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+      cl
+
+  - cmd: cmake --version
+
+  - cmd: python --version
+
+  - ps: |
+      Write-Host "=== Disk ==="
+      Get-PSDrive C
+
+      Write-Host "=== RAM ==="
+      Get-CimInstance Win32_ComputerSystem |
+      Select-Object TotalPhysicalMemory
+
+      Write-Host "=== CPU ==="
+      Get-CimInstance Win32_Processor |
+      Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
+
+test_script:
+  - echo Environment OK
