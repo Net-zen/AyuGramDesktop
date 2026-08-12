@@ -85,10 +85,16 @@ jobs:
           command: |
             @"
             set "PATH=C:\Python310;C:\Python310\Scripts;%PATH%"
+            set "CMAKE_BUILD_PARALLEL_LEVEL=2"
+            set "CL=/MP2"
+
             call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+
             cd /d C:\TBuild
+
             python --version
             where python
+
             call tdesktop\Telegram\build\prepare\win.bat
             "@ | Out-File -Encoding ASCII C:\TBuild\prepare.cmd
 
