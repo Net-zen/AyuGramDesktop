@@ -48,25 +48,16 @@ jobs:
 
 
       - run:
-          name: Clone AyuGram
-          command: |
-            git clone `
-              --recursive `
-              --branch v7.0.9 `
-              https://github.com/AyuGram/AyuGramDesktop.git `
-              C:\TBuild\tdesktop
-
-
-      - run:
           name: Apply Acrylic patch
+          shell: powershell.exe
           command: |
             cd C:\TBuild\tdesktop
 
-            $patch = @"
+            $patch = @'
 diff --git a/Telegram/SourceFiles/window/main_window.cpp b/Telegram/SourceFiles/window/main_window.cpp
 --- a/Telegram/SourceFiles/window/main_window.cpp
 +++ b/Telegram/SourceFiles/window/main_window.cpp
-@@ -392,7 +392,8 @@ QImage GenerateCounterLayer(CounterLayerArgs &&args) {
+@@ -392,7 +392,8 @@
  MainWindow::MainWindow(not_null<Controller*> controller)
 -: _controller(controller)
 +: Ui::RpWindow(true)
@@ -74,11 +65,11 @@ diff --git a/Telegram/SourceFiles/window/main_window.cpp b/Telegram/SourceFiles/
  , _positionUpdatedTimer([=] { savePosition(); })
  , _body(body()) {
 +	setWindowFlag(Qt::FramelessWindowHint);
- 	style::PaletteChanged(
+
 diff --git a/Telegram/SourceFiles/platform/win/main_window_win.cpp b/Telegram/SourceFiles/platform/win/main_window_win.cpp
 --- a/Telegram/SourceFiles/platform/win/main_window_win.cpp
 +++ b/Telegram/SourceFiles/platform/win/main_window_win.cpp
-@@ -711,6 +711,17 @@ void MainWindow::initHook() {
+@@ -711,6 +711,17 @@
 +	static const auto kSystemVersion = QOperatingSystemVersion::current();
 +	if (kSystemVersion.microVersion() >= 22621) {
 +		constexpr auto kDwmwaSystemBackdropType = DWMWINDOWATTRIBUTE(38);
@@ -89,20 +80,14 @@ diff --git a/Telegram/SourceFiles/platform/win/main_window_win.cpp b/Telegram/So
 +			&kDesktopAcrylic,
 +			sizeof(kDesktopAcrylic));
 +	}
-+
- 	WTSRegisterSessionNotification(_HWnd, NOTIFY_FOR_THIS_SESSION);
- }
-"@
-
+'
+            
             $patch | Out-File `
-              C:\TBuild\AyuGram-Acrylic.patch `
+              -FilePath C:\TBuild\Acrylic.patch `
               -Encoding utf8
 
-            git apply --check C:\TBuild\AyuGram-Acrylic.patch
-
-            git apply C:\TBuild\AyuGram-Acrylic.patch
-
-            git diff --check
+            git apply --check C:\TBuild\Acrylic.patch
+            git apply C:\TBuild\Acrylic.patch
 
 
       - run:
